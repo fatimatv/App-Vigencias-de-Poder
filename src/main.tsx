@@ -9,10 +9,13 @@ import {
   Eye,
   FilePlus2,
   FileText,
+  LogOut,
   Pencil,
   Plus,
   Save,
   Search,
+  ShieldCheck,
+  Trash2,
   Upload,
   UserRound,
   X
@@ -30,6 +33,12 @@ type View =
   | { name: 'apoderado'; apoderadoId: string }
   | { name: 'subida'; empresaId: string };
 
+type EmpresaModalState =
+  | { mode: 'create' }
+  | { mode: 'edit'; empresaId: string };
+
+type AccessMode = 'checking' | 'setup' | 'login' | 'authenticated';
+
 interface AppState {
   empresas: Empresa[];
   vigencias: VigenciaPoder[];
@@ -37,20 +46,53 @@ interface AppState {
 }
 
 const emptyState: AppState = { empresas: [], vigencias: [], apoderados: [] };
+const ACCESS_USER_KEY = 'ialaw-access-user';
+const ACCESS_HASH_KEY = 'ialaw-access-hash';
+const ACCESS_SESSION_KEY = 'ialaw-access-session';
 
 function App() {
   const [state, setState] = useState<AppState>(emptyState);
   const [view, setView] = useState<View>({ name: 'dashboard' });
   const [query, setQuery] = useState('');
-  const [showEmpresaForm, setShowEmpresaForm] = useState(false);
+  const [empresaModal, setEmpresaModal] = useState<EmpresaModalState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [accessMode, setAccessMode] = useState<AccessMode>('checking');
+  const [currentUser, setCurrentUser] = useState('');
 
   useEffect(() => {
-    void refresh();
+    void initializeAccess();
   }, []);
+
+  useEffect(() => {
+    if (accessMode === 'authenticated') {
+      void refresh();
+    }
+  }, [accessMode]);
+
+  async function initializeAccess() {
+    const storedUser = localStorage.getItem(ACCESS_USER_KEY);
+    const storedHash = localStorage.getItem(ACCESS_HASH_KEY);
+    const activeSession = sessionStorage.getItem(ACCESS_SESSION_KEY);
+
+    if (!storedUser || !storedHash) {
+      setLoading(false);
+      setAccessMode('setup');
+      return;
+    }
+
+    if (activeSession === storedUser) {
+      setCurrentUser(storedUser);
+      setAccessMode('authenticated');
+      return;
+    }
+
+    setLoading(false);
+    setAccessMode('login');
+  }
 
   async function refresh() {
     setLoading(true);
+    await repairLegacyImportedData();
     const [empresas, vigencias, apoderados] = await Promise.all([
       db.empresas.orderBy('nombreEmpresa').toArray(),
       db.vigencias.orderBy('fechaSubida').reverse().toArray(),
@@ -67,7 +109,53 @@ function App() {
     setLoading(false);
   }
 
+  async function handleInitialAccess(username: string, password: string) {
+    const normalizedUser = username.trim();
+    const hash = await hashCredential(normalizedUser, password);
+    localStorage.setItem(ACCESS_USER_KEY, normalizedUser);
+    localStorage.setItem(ACCESS_HASH_KEY, hash);
+    sessionStorage.setItem(ACCESS_SESSION_KEY, normalizedUser);
+    setCurrentUser(normalizedUser);
+    setAccessMode('authenticated');
+  }
+
+  async function handleLogin(username: string, password: string): Promise<boolean> {
+    const storedUser = localStorage.getItem(ACCESS_USER_KEY);
+    const storedHash = localStorage.getItem(ACCESS_HASH_KEY);
+    const normalizedUser = username.trim();
+    if (!storedUser || !storedHash) return false;
+
+    const hash = await hashCredential(normalizedUser, password);
+    const valid = normalizedUser === storedUser && hash === storedHash;
+    if (!valid) return false;
+
+    sessionStorage.setItem(ACCESS_SESSION_KEY, storedUser);
+    setCurrentUser(storedUser);
+    setAccessMode('authenticated');
+    return true;
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem(ACCESS_SESSION_KEY);
+    setCurrentUser('');
+    setState(emptyState);
+    setView({ name: 'dashboard' });
+    setLoading(false);
+    setAccessMode('login');
+  }
+
   const dashboard = useMemo(() => buildDashboard(state, query), [state, query]);
+
+  if (accessMode !== 'authenticated') {
+    return (
+      <AccessGate
+        mode={accessMode}
+        loading={loading}
+        onCreateAccess={handleInitialAccess}
+        onLogin={handleLogin}
+      />
+    );
+  }
 
   return (
     <main className="brand-shell min-h-screen text-ialaw-ink">
@@ -86,9 +174,15 @@ function App() {
             <span className="hidden h-8 w-px bg-white/35 md:block" />
             <span className="hidden font-title text-lg font-black md:block">Vigencias de poder</span>
           </button>
-          <button className="icon-button icon-button-inverse print:hidden" onClick={() => window.print()} title="Exportar ficha como PDF">
-            <Download size={18} />
-          </button>
+          <div className="flex items-center gap-2 print:hidden">
+            <span className="hidden text-sm text-white/85 md:inline">{currentUser}</span>
+            <button className="icon-button icon-button-inverse" onClick={() => window.print()} title="Exportar ficha como PDF">
+              <Download size={18} />
+            </button>
+            <button className="icon-button icon-button-inverse" onClick={handleLogout} title="Cerrar sesión">
+              <LogOut size={18} />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -103,7 +197,7 @@ function App() {
                 state={state}
                 query={query}
                 setQuery={setQuery}
-                onNewEmpresa={() => setShowEmpresaForm(true)}
+                onNewEmpresa={() => setEmpresaModal({ mode: 'create' })}
                 onOpenEmpresa={(empresaId) => setView({ name: 'empresa', empresaId })}
               />
             )}
@@ -114,6 +208,7 @@ function App() {
                 onBack={() => setView({ name: 'dashboard' })}
                 onUpload={(empresaId) => setView({ name: 'subida', empresaId })}
                 onOpenApoderado={(apoderadoId) => setView({ name: 'apoderado', apoderadoId })}
+                onEditEmpresa={(empresaId) => setEmpresaModal({ mode: 'edit', empresaId })}
                 onRefresh={refresh}
               />
             )}
@@ -140,15 +235,120 @@ function App() {
         )}
       </div>
 
-      {showEmpresaForm && (
+      {empresaModal && (
         <EmpresaModal
-          onClose={() => setShowEmpresaForm(false)}
+          empresa={empresaModal.mode === 'edit' ? state.empresas.find((item) => item.id === empresaModal.empresaId) : undefined}
+          onClose={() => setEmpresaModal(null)}
           onSaved={async () => {
-            setShowEmpresaForm(false);
+            setEmpresaModal(null);
             await refresh();
           }}
         />
       )}
+    </main>
+  );
+}
+
+function AccessGate({
+  mode,
+  loading,
+  onCreateAccess,
+  onLogin
+}: {
+  mode: AccessMode;
+  loading: boolean;
+  onCreateAccess: (username: string, password: string) => Promise<void>;
+  onLogin: (username: string, password: string) => Promise<boolean>;
+}) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit() {
+    const normalizedUser = username.trim();
+    if (!normalizedUser || !password) {
+      setError('Ingresa usuario y contraseña.');
+      return;
+    }
+
+    setSubmitting(true);
+    setError('');
+
+    try {
+      if (mode === 'setup') {
+        if (password !== confirmPassword) {
+          setError('Las contraseñas no coinciden.');
+          return;
+        }
+        await onCreateAccess(normalizedUser, password);
+        return;
+      }
+
+      const ok = await onLogin(normalizedUser, password);
+      if (!ok) setError('Usuario o contraseña incorrectos.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (loading && mode === 'checking') {
+    return <main className="brand-shell min-h-screen p-6"><StatusPanel text="Comprobando acceso al repositorio local..." /></main>;
+  }
+
+  const isSetup = mode === 'setup';
+
+  return (
+    <main className="brand-shell grid min-h-screen place-items-center p-6 text-ialaw-ink">
+      <section className="w-full max-w-md rounded-3xl border border-navy-100 bg-white p-6 shadow-2xl">
+        <div className="mb-6 flex items-center gap-4">
+          <BrandMark />
+          <div>
+            <p className="font-title text-xl font-black text-ialaw-blue">IALAW</p>
+            <p className="font-subtitle text-sm uppercase tracking-[0.18em] text-ialaw-gray">Vigencias de poder</p>
+          </div>
+        </div>
+
+        <div className="section-band space-y-4 border-none p-0 shadow-none">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="text-ialaw-blue" size={22} />
+            <div>
+              <h1 className="font-title text-lg font-black text-ialaw-blue">{isSetup ? 'Registro inicial' : 'Acceso protegido'}</h1>
+              <p className="text-sm text-slate-600">
+                {isSetup
+                  ? 'Define el usuario y contraseña local para proteger la información almacenada en este navegador.'
+                  : 'Ingresa tus credenciales para acceder al repositorio local.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            <input className="input" placeholder="Usuario" value={username} onChange={(event) => setUsername(event.target.value)} />
+            <input className="input" type="password" placeholder="Contraseña" value={password} onChange={(event) => setPassword(event.target.value)} />
+            {isSetup && (
+              <input
+                className="input"
+                type="password"
+                placeholder="Confirmar contraseña"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+              />
+            )}
+          </div>
+
+          {error && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{error}</p>}
+
+          <button className="primary-button w-full" disabled={submitting} onClick={() => void submit()}>
+            <ShieldCheck size={18} />
+            {submitting ? 'Procesando...' : isSetup ? 'Crear acceso' : 'Ingresar'}
+          </button>
+
+          <p className="text-xs text-slate-500">
+            Este acceso protege la app en este navegador y este equipo. No reemplaza un sistema con backend o permisos de servidor.
+          </p>
+        </div>
+      </section>
     </main>
   );
 }
@@ -235,6 +435,7 @@ function EmpresaView({
   onBack,
   onUpload,
   onOpenApoderado,
+  onEditEmpresa,
   onRefresh
 }: {
   empresaId: string;
@@ -242,6 +443,7 @@ function EmpresaView({
   onBack: () => void;
   onUpload: (empresaId: string) => void;
   onOpenApoderado: (apoderadoId: string) => void;
+  onEditEmpresa: (empresaId: string) => void;
   onRefresh: () => Promise<void>;
 }) {
   const empresa = state.empresas.find((item) => item.id === empresaId);
@@ -259,13 +461,31 @@ function EmpresaView({
     await onRefresh();
   }
 
+  async function deleteVigencia(vigenciaId: string) {
+    const confirmed = window.confirm('Esta acción eliminará la vigencia y los apoderados asociados. ¿Deseas continuar?');
+    if (!confirmed) return;
+
+    await db.transaction('rw', db.vigencias, db.apoderados, async () => {
+      await db.apoderados.where('vigenciaId').equals(vigenciaId).delete();
+      await db.vigencias.delete(vigenciaId);
+    });
+
+    await onRefresh();
+  }
+
   return (
     <section className="space-y-6">
       <Toolbar onBack={onBack} title={empresa.nombreEmpresa}>
-        <button className="primary-button" onClick={() => onUpload(empresa.id)}>
-          <FilePlus2 size={18} />
-          Subir vigencia de poder
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button className="ghost-button" onClick={() => onEditEmpresa(empresa.id)}>
+            <Pencil size={16} />
+            Editar empresa
+          </button>
+          <button className="primary-button" onClick={() => onUpload(empresa.id)}>
+            <FilePlus2 size={18} />
+            Subir vigencia de poder
+          </button>
+        </div>
       </Toolbar>
 
       <section className="grid gap-4 md:grid-cols-4">
@@ -298,7 +518,7 @@ function EmpresaView({
                 <th>Archivo</th>
                 <th>Fecha de expedición</th>
                 <th>Estado</th>
-                <th>PDF</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -310,9 +530,14 @@ function EmpresaView({
                     <span className={`pill ${statusClass(vigencia.estadoAlerta)}`}>{statusLabel(vigencia.estadoAlerta)}</span>
                   </td>
                   <td>
-                    <button className="icon-button" onClick={() => openBlob(vigencia.archivoPDF)} title="Ver PDF">
-                      <Eye size={16} />
-                    </button>
+                    <div className="flex gap-2">
+                      <button className="icon-button" onClick={() => openBlob(vigencia.archivoPDF)} title="Ver PDF">
+                        <Eye size={16} />
+                      </button>
+                      <button className="icon-button text-red-700 hover:bg-red-50" onClick={() => void deleteVigencia(vigencia.id)} title="Eliminar vigencia">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -668,26 +893,37 @@ function UploadView({
   );
 }
 
-function EmpresaModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => Promise<void> }) {
+function EmpresaModal({ empresa, onClose, onSaved }: { empresa?: Empresa; onClose: () => void; onSaved: () => Promise<void> }) {
   const [form, setForm] = useState({
-    nombreEmpresa: '',
-    ruc: '',
-    partidaRegistral: '',
-    oficinaRegistral: 'Lima',
-    notas: ''
+    nombreEmpresa: empresa?.nombreEmpresa ?? '',
+    ruc: empresa?.ruc ?? '',
+    partidaRegistral: empresa?.partidaRegistral ?? '',
+    oficinaRegistral: empresa?.oficinaRegistral ?? 'Lima',
+    notas: empresa?.notas ?? ''
   });
+
+  const editing = Boolean(empresa);
 
   async function save() {
     if (!form.nombreEmpresa.trim() || !/^\d{11}$/.test(form.ruc)) return;
-    await db.empresas.add({
-      id: crypto.randomUUID(),
+    const payload = {
       nombreEmpresa: form.nombreEmpresa.trim(),
       ruc: form.ruc,
       oficinaRegistral: form.oficinaRegistral.trim() || 'Lima',
       ...(form.partidaRegistral.trim() ? { partidaRegistral: form.partidaRegistral.trim() } : {}),
-      ...(form.notas.trim() ? { notas: form.notas.trim() } : {}),
-      fechaCreacion: Date.now()
-    });
+      ...(form.notas.trim() ? { notas: form.notas.trim() } : {})
+    };
+
+    if (empresa) {
+      await db.empresas.update(empresa.id, payload);
+    } else {
+      await db.empresas.add({
+        id: crypto.randomUUID(),
+        ...payload,
+        fechaCreacion: Date.now()
+      });
+    }
+
     await onSaved();
   }
 
@@ -695,7 +931,7 @@ function EmpresaModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
     <div className="modal-backdrop">
       <section className="modal">
         <div className="section-heading">
-          <h2>Registrar nueva empresa</h2>
+          <h2>{editing ? 'Editar empresa' : 'Registrar nueva empresa'}</h2>
           <button className="icon-button" onClick={onClose} title="Cerrar">
             <X size={18} />
           </button>
@@ -709,7 +945,7 @@ function EmpresaModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
         </div>
         <button className="primary-button mt-4 w-full" onClick={() => void save()}>
           <Save size={18} />
-          Guardar empresa
+          {editing ? 'Guardar cambios' : 'Guardar empresa'}
         </button>
       </section>
     </div>
@@ -885,6 +1121,99 @@ function updateParsedApoderado(
     ...parsed,
     apoderados: parsed.apoderados.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item))
   });
+}
+
+async function repairLegacyImportedData() {
+  const [vigencias, apoderados] = await Promise.all([db.vigencias.toArray(), db.apoderados.toArray()]);
+
+  for (const vigencia of vigencias) {
+    if (!vigencia.textoExtraido?.trim()) continue;
+
+    const linkedApoderados = apoderados.filter((item) => item.vigenciaId === vigencia.id);
+    const hasManualEdits = linkedApoderados.some((item) => (item.editadoPorUsuario?.length ?? 0) > 0);
+    const needsRepair =
+      linkedApoderados.length === 0 ||
+      linkedApoderados.every(
+        (item) => item.facultades.length === 0 && item.limitaciones.length === 0 && (item.actosSinFacultad?.length ?? 0) === 0
+      );
+
+    if (!needsRepair || hasManualEdits) continue;
+
+    const reparsed = parseCertificateText(vigencia.textoExtraido);
+    if (!reparsed.apoderados.length) continue;
+
+    await db.transaction('rw', db.vigencias, db.apoderados, async () => {
+      const repairedDate = vigencia.fechaExpedicion ?? reparsed.fechaExpedicion;
+      await db.vigencias.update(vigencia.id, {
+        fechaExpedicion: repairedDate,
+        numeroPublicidad: vigencia.numeroPublicidad ?? reparsed.numeroPublicidad,
+        estadoAlerta: calculateAlertState(repairedDate)
+      });
+
+      if (linkedApoderados.length > 0 && linkedApoderados.length === reparsed.apoderados.length) {
+        const matched = new Set<string>();
+
+        for (const parsedApoderado of reparsed.apoderados) {
+          const match =
+            linkedApoderados.find(
+              (item) => !matched.has(item.id) && normalizeEntityName(item.nombreApoderado) === normalizeEntityName(parsedApoderado.nombreApoderado)
+            ) ?? linkedApoderados.find((item) => !matched.has(item.id));
+
+          if (!match) continue;
+          matched.add(match.id);
+
+          await db.apoderados.put({
+            ...match,
+            nombreApoderado: match.nombreApoderado || parsedApoderado.nombreApoderado,
+            dniApoderado: match.dniApoderado || parsedApoderado.dniApoderado,
+            tipoPoder: parsedApoderado.tipoPoder,
+            tipoRepresentacion: parsedApoderado.tipoRepresentacion,
+            coApoderado: parsedApoderado.coApoderado,
+            facultades: parsedApoderado.facultades,
+            limitaciones: parsedApoderado.limitaciones,
+            actosSinFacultad: parsedApoderado.actosSinFacultad,
+            confianza: parsedApoderado.confianza
+          });
+        }
+
+        return;
+      }
+
+      if (linkedApoderados.length > 0) {
+        await db.apoderados.bulkDelete(linkedApoderados.map((item) => item.id));
+      }
+
+      await db.apoderados.bulkAdd(
+        reparsed.apoderados.map((item) => ({
+          id: crypto.randomUUID(),
+          vigenciaId: vigencia.id,
+          empresaId: vigencia.empresaId,
+          nombreApoderado: item.nombreApoderado,
+          dniApoderado: item.dniApoderado,
+          tipoPoder: item.tipoPoder,
+          tipoRepresentacion: item.tipoRepresentacion,
+          coApoderado: item.coApoderado,
+          facultades: item.facultades,
+          limitaciones: item.limitaciones,
+          actosSinFacultad: item.actosSinFacultad,
+          observaciones: '',
+          confianza: item.confianza
+        }))
+      );
+    });
+  }
+}
+
+function normalizeEntityName(value?: string): string {
+  return value?.toLowerCase().replace(/\s+/g, ' ').trim() ?? '';
+}
+
+async function hashCredential(username: string, password: string): Promise<string> {
+  const data = new TextEncoder().encode(`${username}::${password}`);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 createRoot(document.getElementById('root')!).render(
