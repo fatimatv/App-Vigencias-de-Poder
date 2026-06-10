@@ -51,7 +51,9 @@ export function parseCertificateText(text: string): ParsedCertificate {
     /(?:partida\s*(?:n\.?°?|electr[oó]nica|registral)?|partida\s+electr[oó]nica|partida\s+registral)\s*(?:n\.?°?)?\s*[:\-]?\s*(\d{6,12}(?:-\d+)?)/i
   );
   const oficina = extractMatch(normalized, /oficina\s+registral\s+(?:de\s+)?([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ\s]+?)(?:\.|,|;|\s+N[uú]mero|\s+Se\s)/i);
-  const numeroPublicidad = extractMatch(normalized, /(?:n[uú]mero\s+de\s+publicidad|publicidad\s+n\.?°?)\s*[:\-]?\s*([A-Z0-9-]{5,})/i);
+  const numeroPublicidad = normalizePublicationNumber(
+    extractMatch(normalized, /(?:n[uú]mero\s+de\s+publicidad|publicidad(?:\s+registral)?\s*(?:n\.?[°*]?|nro\.?|n[uú]m\.?|n[uú]mero)?)\s*[:\-]?\s*([A-Z0-9\s-]{5,})/i)
+  );
   const representation = detectRepresentation(normalized);
   const apoderados = extractApoderados(normalized, representation);
   const confianza: Record<string, Confianza> = {
@@ -81,6 +83,10 @@ function extractMatch(text: string, pattern: RegExp): string | undefined {
 }
 
 function extractIssueDate(text: string): string | undefined {
+  const headerChunk = text.slice(0, 400);
+  const headerTimestamp = headerChunk.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\s+\d{1,2}:\d{2}:\d{2}/);
+  if (headerTimestamp) return toIsoDate(headerTimestamp[3], headerTimestamp[2], headerTimestamp[1]);
+
   const numericPatterns = [
     new RegExp(`${DATE_PREFIXES}\\s*[:\\-]?\\s*(\\d{1,2})[\\/\\-](\\d{1,2})[\\/\\-](\\d{4})`, 'i'),
     /certificado\s+de\s+vigencia\s+de\s+poder[^\d]{0,80}(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i
@@ -135,7 +141,9 @@ function extractApoderados(
     new RegExp(
       `(?:apoderad[oa](?:\\s+principal)?|representante\\s+legal)\\s*[:\\-]\\s*${PERSON_NAME_PATTERN}(?:,?\\s*(?:identificad[oa]\\s+con\\s+|con\\s+)?DNI\\s*N\\.?°?\\s*(\\d{8}))?(?=,?\\s+(?:para|quien|con)\\b|\\.|;)`,
       'gi'
-    )
+    ),
+    /nombramiento\s+a\s+favor\s+de\s+([A-ZÁÉÍÓÚÑ\s,]{8,}?)(?:,?\s*identificad[oa]\s+con\s+D\.?N\.?I\.?\s*N\.?[°*]?\s*(\d{8}))(?=\s*,?\s*cuyos|\.|;)/gi,
+    /nombrar\s+como\s+nuevo\s+gerente\s+general(?:\s+de\s+la\s+sociedad)?\s+a\s+(?:la|el)\s+(?:srta\.?|sra\.?|sr\.?|señora|señor)?\s*([A-ZÁÉÍÓÚÑ\s]{8,}?)(?:,?\s*identificad[oa]\s+con\s+D\.?N\.?I\.?\s*N\.?[°*]?\s*(\d{8}))(?=\s*,?\s*quien|\.|;)/gi
   ];
 
   const apoderados: ParsedCertificate['apoderados'] = [];
@@ -172,7 +180,18 @@ function extractApoderados(
 
 function normalizePersonName(value?: string): string | undefined {
   const normalized = value?.replace(/\s+/g, ' ').replace(/\s+(?:con|para|quien)$/i, '').trim();
-  return normalized && normalized.length >= 8 ? normalized : undefined;
+  if (!normalized || normalized.length < 8) return undefined;
+  if (!normalized.includes(',')) return normalized;
+
+  const [left, right] = normalized.split(',').map((part) => part.trim()).filter(Boolean);
+  return left && right ? `${right} ${left}` : normalized;
+}
+
+function normalizePublicationNumber(value?: string): string | undefined {
+  const normalized = value?.replace(/\s+/g, ' ').trim();
+  if (!normalized) return undefined;
+  const compact = normalized.replace(/\s*-\s*/g, '-');
+  return compact.match(/[A-Z0-9]+(?:-[A-Z0-9]+)+|[A-Z0-9]{5,}/)?.[0];
 }
 
 function inferPowerType(text: string): string {

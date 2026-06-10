@@ -517,12 +517,25 @@ function UploadView({
 
   async function handleFile(nextFile: File) {
     setFile(nextFile);
-    setProgress('Extrayendo texto con pdf.js...');
-    const extracted = await extractPdfText(nextFile);
-    setText(extracted);
-    setProgress('Aplicando reglas de extracción registral...');
-    setParsed(parseCertificateText(extracted));
-    setProgress('Listo para revisión manual');
+    setText('');
+    setParsed(null);
+    setProgress('Preparando lectura del PDF...');
+
+    try {
+      const extracted = await extractPdfText(nextFile, setProgress);
+      if (!extracted.trim()) {
+        setProgress('El PDF cargó, pero no se detectó texto utilizable. Puede requerir OCR adicional o estar protegido.');
+        return;
+      }
+
+      setText(extracted);
+      setProgress('Aplicando reglas de extracción registral...');
+      setParsed(parseCertificateText(extracted));
+      setProgress('Extracción terminada. Revisa la información detectada.');
+    } catch (error) {
+      console.error(error);
+      setProgress('No se pudo leer el PDF. Verifica que el archivo no esté dañado o protegido.');
+    }
   }
 
   async function save() {

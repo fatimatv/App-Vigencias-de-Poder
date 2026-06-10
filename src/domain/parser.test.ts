@@ -80,4 +80,35 @@ describe('parseCertificateText', () => {
       expect.arrayContaining(['representar judicialmente', 'abrir y cerrar cuentas'])
     );
   });
+
+  it('extracts data from OCR output of a real SUNARP vigencia certificate', () => {
+    const text = `
+      ZONA REGISTRAL N° IX Código de Verificación:
+      Oficina Registral de LIMA 32839301
+      Publicidad N* 2025 - 3908008
+      16/06/2025 14:59:00
+      REGISTRO DE PERSONAS JURIDICAS
+      LIBRO DE SOCIEDADES ANONIMAS
+      CERTIFICADO DE VIGENCIA
+      El servidor que suscribe, CERTIFICA:
+      Que, en la partida electrónica N° 13273320 del Registro de Personas Jurídicas de la Oficina Registral de LIMA,
+      consta registrado y vigente el nombramiento a favor de TOCHE VEGA, FATIMA LUCIA, identificado con DNI. N* 40945848,
+      cuyos datos se precisan a continuación:
+      DENOMINACIÓN O RAZÓN SOCIAL: EBANX PERU SOCIEDAD ANONIMA CERRADA
+      CARGO: GERENTE GENERAL
+      NOMBRAR COMO NUEVO GERENTE GENERAL DE LA SOCIEDAD A LA SRTA. FATIMA LUCIA TOCHE VEGA,
+      IDENTIFICADA CON D.N.I. N°40945848, QUIEN A PARTIR DEL 22 DE JULIO DE 2018 GOZARÁ DE
+      TODAS LAS FACULTADES CORRESPONDIENTES AL GERENTE GENERAL.
+    `;
+
+    const parsed = parseCertificateText(text);
+
+    expect(parsed.fechaExpedicion).toBe('2025-06-16');
+    expect(parsed.partidaRegistral).toBe('13273320');
+    expect(parsed.numeroPublicidad).toBe('2025-3908008');
+    expect(parsed.apoderados).toHaveLength(1);
+    expect(parsed.apoderados[0].nombreApoderado).toBe('FATIMA LUCIA TOCHE VEGA');
+    expect(parsed.apoderados[0].dniApoderado).toBe('40945848');
+    expect(parsed.requiereRevisionManual).toBe(false);
+  });
 });

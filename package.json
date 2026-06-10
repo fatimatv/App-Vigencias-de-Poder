@@ -13,9 +13,10 @@
     "dexie": "^4.0.11",
     "lucide-react": "^0.468.0",
     "pdfjs-dist": "^4.10.38",
-    "vite": "^6.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "tesseract.js": "^7.0.0",
+    "vite": "^6.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.1",
