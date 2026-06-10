@@ -42,4 +42,42 @@ describe('parseCertificateText', () => {
     expect(parsed.confianza.fechaExpedicion).toBe('bajo');
     expect(parsed.requiereRevisionManual).toBe(true);
   });
+
+  it('extracts data from alternative SUNARP phrasing with numeric date and feminine apoderada label', () => {
+    const text = `
+      CERTIFICADO DE VIGENCIA DE PODER de fecha: 21/05/2026.
+      Partida electrónica N° 11023344 inscrita en la Oficina Registral de Arequipa.
+      Publicidad N° A12345-2026.
+      Se nombra como apoderada a Maria Fernanda Lopez Torres con DNI N° 87654321 para suscribir contratos y cobrar.
+    `;
+
+    const parsed = parseCertificateText(text);
+
+    expect(parsed.fechaExpedicion).toBe('2026-05-21');
+    expect(parsed.partidaRegistral).toBe('11023344');
+    expect(parsed.numeroPublicidad).toBe('A12345-2026');
+    expect(parsed.apoderados).toHaveLength(1);
+    expect(parsed.apoderados[0].nombreApoderado).toBe('Maria Fernanda Lopez Torres');
+    expect(parsed.apoderados[0].dniApoderado).toBe('87654321');
+    expect(parsed.requiereRevisionManual).toBe(false);
+  });
+
+  it('extracts apoderado from labeled field format', () => {
+    const text = `
+      Certificado de vigencia de poder emitido con fecha 7 de junio de 2026.
+      Partida registral 44556677 en la Oficina Registral de Cusco.
+      Apoderado: JOSE LUIS PEREZ GOMEZ, DNI N° 11223344.
+      Cuenta con facultades para representar judicialmente y abrir y cerrar cuentas.
+    `;
+
+    const parsed = parseCertificateText(text);
+
+    expect(parsed.fechaExpedicion).toBe('2026-06-07');
+    expect(parsed.apoderados).toHaveLength(1);
+    expect(parsed.apoderados[0].nombreApoderado).toBe('JOSE LUIS PEREZ GOMEZ');
+    expect(parsed.apoderados[0].dniApoderado).toBe('11223344');
+    expect(parsed.apoderados[0].facultades).toEqual(
+      expect.arrayContaining(['representar judicialmente', 'abrir y cerrar cuentas'])
+    );
+  });
 });

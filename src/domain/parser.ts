@@ -37,6 +37,12 @@ const FACULTY_PHRASES = [
   'sustituir poderes'
 ];
 
+const DATE_PREFIXES =
+  '(?:expedido\\s+el|expedido\\s+con\\s+fecha|fecha\\s+de\\s+expedici[oó]n|emitido\\s+el|emitido\\s+con\\s+fecha|con\\s+fecha|de\\s+fecha|fecha)';
+
+const PERSON_NAME_PATTERN =
+  '([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+(?:\\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+){2,}|[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\\s]{8,}?)';
+
 export function parseCertificateText(text: string): ParsedCertificate {
   const normalized = normalizeWhitespace(text);
   const fecha = extractIssueDate(normalized);
@@ -67,7 +73,7 @@ export function parseCertificateText(text: string): ParsedCertificate {
 }
 
 function normalizeWhitespace(text: string): string {
-  return text.replace(/\s+/g, ' ').replace(/N\.°/gi, 'N.°').trim();
+  return text.replace(/\s+/g, ' ').replace(/[“”]/g, '"').replace(/N[º°]/gi, 'N.°').trim();
 }
 
 function extractMatch(text: string, pattern: RegExp): string | undefined {
@@ -75,17 +81,29 @@ function extractMatch(text: string, pattern: RegExp): string | undefined {
 }
 
 function extractIssueDate(text: string): string | undefined {
-  const numeric = text.match(
-    /(?:expedido\s+el|fecha\s+de\s+expedici[oó]n|emitido\s+el|con\s+fecha)\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i
-  );
-  if (numeric) return toIsoDate(numeric[3], numeric[2], numeric[1]);
+  const numericPatterns = [
+    new RegExp(`${DATE_PREFIXES}\\s*[:\\-]?\\s*(\\d{1,2})[\\/\\-](\\d{1,2})[\\/\\-](\\d{4})`, 'i'),
+    /certificado\s+de\s+vigencia\s+de\s+poder[^\d]{0,80}(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i
+  ];
 
-  const written = text.match(
-    /(?:expedido\s+el|fecha\s+de\s+expedici[oó]n|emitido\s+el|con\s+fecha)\s*(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})/i
-  );
-  if (!written) return undefined;
-  const month = MONTHS[written[2].toLowerCase()];
-  return month ? toIsoDate(written[3], month, written[1]) : undefined;
+  for (const pattern of numericPatterns) {
+    const numeric = text.match(pattern);
+    if (numeric) return toIsoDate(numeric[3], numeric[2], numeric[1]);
+  }
+
+  const writtenPatterns = [
+    new RegExp(`${DATE_PREFIXES}\\s*[:\\-]?\\s*(\\d{1,2})\\s+de\\s+([a-záéíóú]+)\\s+de\\s+(\\d{4})`, 'i'),
+    /certificado\s+de\s+vigencia\s+de\s+poder[^\d]{0,80}(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})/i
+  ];
+
+  for (const pattern of writtenPatterns) {
+    const written = text.match(pattern);
+    if (!written) continue;
+    const month = MONTHS[written[2].toLowerCase()];
+    if (month) return toIsoDate(written[3], month, written[1]);
+  }
+
+  return undefined;
 }
 
 function toIsoDate(year: string, month: string, day: string): string {
@@ -109,28 +127,52 @@ function extractApoderados(
   text: string,
   representation: { tipoRepresentacion: TipoRepresentacion; coApoderado?: string }
 ): ParsedCertificate['apoderados'] {
-  const pattern =
-    /(?:se\s+otorga\s+poder(?:\s+\w+)?\s+a|faculta\s+a|designa\s+como\s+apoderado\s+a|confiere\s+poder\s+a)\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{8,}?)(?:,\s*(?:identificado\s+con\s+)?DNI\s*N\.?°?\s*(\d{8}))?(?=,?\s+para\s+|\.|;)/gi;
-  const matches = [...text.matchAll(pattern)];
+  const patterns = [
+    new RegExp(
+      `(?:se\\s+otorga\\s+poder(?:es)?(?:\\s+\\w+)?\\s+a|otorga\\s+poder(?:es)?\\s+a|faculta\\s+a|otorga\\s+facultades\\s+a|designa\\s+como\\s+apoderad[oa]\\s+a|se\\s+designa\\s+como\\s+apoderad[oa]\\s+a|se\\s+nombra\\s+como\\s+apoderad[oa]\\s+a|confiere\\s+poder\\s+a)\\s+${PERSON_NAME_PATTERN}(?:,?\\s*(?:identificad[oa]\\s+con\\s+|con\\s+)?DNI\\s*N\\.?°?\\s*(\\d{8}))?(?=,?\\s+(?:para|quien|con|y\\s+para)\\b|\\.|;)`,
+      'gi'
+    ),
+    new RegExp(
+      `(?:apoderad[oa](?:\\s+principal)?|representante\\s+legal)\\s*[:\\-]\\s*${PERSON_NAME_PATTERN}(?:,?\\s*(?:identificad[oa]\\s+con\\s+|con\\s+)?DNI\\s*N\\.?°?\\s*(\\d{8}))?(?=,?\\s+(?:para|quien|con)\\b|\\.|;)`,
+      'gi'
+    )
+  ];
 
-  return matches.map((match) => ({
-    nombreApoderado: match[1].trim(),
-    dniApoderado: match[2],
-    tipoPoder: inferPowerType(text),
-    tipoRepresentacion: representation.tipoRepresentacion,
-    coApoderado: representation.coApoderado,
-    facultades: extractFacultades(text),
-    limitaciones: extractLimitaciones(text),
-    actosSinFacultad: extractNegativeActs(text),
-    confianza: {
-      nombreApoderado: 'alto',
-      dniApoderado: match[2] ? 'alto' : 'bajo',
-      tipoPoder: 'medio',
-      tipoRepresentacion: representation.tipoRepresentacion === 'individual' ? 'medio' : 'alto',
-      facultades: 'medio',
-      limitaciones: 'medio'
+  const apoderados: ParsedCertificate['apoderados'] = [];
+  const seen = new Set<string>();
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const nombreApoderado = normalizePersonName(match[1]);
+      if (!nombreApoderado || seen.has(nombreApoderado.toLowerCase())) continue;
+      seen.add(nombreApoderado.toLowerCase());
+      apoderados.push({
+        nombreApoderado,
+        dniApoderado: match[2],
+        tipoPoder: inferPowerType(text),
+        tipoRepresentacion: representation.tipoRepresentacion,
+        coApoderado: representation.coApoderado,
+        facultades: extractFacultades(text),
+        limitaciones: extractLimitaciones(text),
+        actosSinFacultad: extractNegativeActs(text),
+        confianza: {
+          nombreApoderado: 'alto',
+          dniApoderado: match[2] ? 'alto' : 'bajo',
+          tipoPoder: 'medio',
+          tipoRepresentacion: representation.tipoRepresentacion === 'individual' ? 'medio' : 'alto',
+          facultades: 'medio',
+          limitaciones: 'medio'
+        }
+      });
     }
-  }));
+  }
+
+  return apoderados;
+}
+
+function normalizePersonName(value?: string): string | undefined {
+  const normalized = value?.replace(/\s+/g, ' ').replace(/\s+(?:con|para|quien)$/i, '').trim();
+  return normalized && normalized.length >= 8 ? normalized : undefined;
 }
 
 function inferPowerType(text: string): string {
