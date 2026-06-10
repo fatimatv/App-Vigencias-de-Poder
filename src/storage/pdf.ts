@@ -5,6 +5,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs',
 
 const MIN_EMBEDDED_TEXT_LENGTH = 24;
 const OCR_SCALE = 2;
+const LOCAL_TESSDATA_PATH = '/tessdata';
 
 export async function extractPdfText(file: File, onProgress?: (message: string) => void): Promise<string> {
   const data = await file.arrayBuffer();
@@ -29,7 +30,11 @@ export async function extractPdfText(file: File, onProgress?: (message: string) 
 }
 
 async function extractPdfTextWithOcr(pdf: any, onProgress?: (message: string) => void): Promise<string> {
-  const worker = await createWorker('spa+eng');
+  const worker = await createWorker('spa+eng', 1, {
+    cacheMethod: 'readOnly',
+    gzip: false,
+    langPath: LOCAL_TESSDATA_PATH
+  });
   const pages: string[] = [];
 
   try {

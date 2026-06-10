@@ -6,3 +6,6 @@ test-results/
 *.tsbuildinfo
 
 .vercel
+/eng.traineddata
+/spa.traineddata
+/samples/

@@ -17,6 +17,7 @@ const MONTHS: Record<string, string> = {
 };
 
 const FACULTY_VERBS = [
+  'apersonarse',
   'abrir',
   'aceptar',
   'afianzar',
@@ -33,6 +34,7 @@ const FACULTY_VERBS = [
   'enajenar',
   'endosar',
   'firmar',
+  'formular',
   'gestionar',
   'girar',
   'hipotecar',
@@ -54,7 +56,8 @@ const FACULTY_VERBS = [
 
 const FACULTY_SECTION_MARKERS = [
   /facultades\s*:/i,
-  /las\s+atribuciones\s+del\s+gerente\s+general[^.]{0,220}?ser[aá]n\s+las\s+siguientes\s*:/i,
+  /las\s+atribuciones\s+del\s+gerente\s+general[^.]{0,400}?ser[aá]n\s+las\s+siguientes\s*:/i,
+  /a\s+sola\s+firma\s*:/i,
   /facultades\s+correspondientes\s+al\s+gerente\s+general/i
 ];
 
@@ -266,13 +269,23 @@ function extractFacultadSections(text: string): string[] {
     sections.push((endMatch ? rest.slice(0, endMatch.index) : rest).trim());
   }
 
-  if (sections.length > 0) return sections;
+  if (sections.length > 0) {
+    return sections.sort((left, right) => right.length - left.length);
+  }
   return [text];
 }
 
 function splitFacultyClauses(section: string): string[] {
-  return section
-    .split(/(?:\s+[A-Z]\)\s+|\s+\d+[.)]\s+|\s*;\s*|\s*,\s*|\.(?=\s+[A-ZÁÉÍÓÚÑ0-9]))/)
+  const verbPattern = FACULTY_VERBS.join('|');
+  const normalized = section
+    .replace(/\s+[A-Z]\)\s+/g, '\n')
+    .replace(/\s+\d+[.)]\s+/g, '\n')
+    .replace(new RegExp(`,\\s+(?=(?:y\\s+|e\\s+)?(?:${verbPattern})\\b)`, 'gi'), '\n')
+    .replace(new RegExp(`;\\s+(?=(?:y\\s+|e\\s+)?(?:${verbPattern})\\b)`, 'gi'), '\n')
+    .replace(new RegExp(`\\.\\s+(?=(?:[A-Z]\\)|\\d+[.)]|(?:${verbPattern})\\b))`, 'gi'), '\n');
+
+  return normalized
+    .split(/\n+/)
     .map(cleanFacultyClause)
     .filter(isFacultyClause);
 }
@@ -284,6 +297,7 @@ function cleanFacultyClause(value: string): string {
   const sliced = verbIndex >= 0 ? compact.slice(verbIndex) : compact;
 
   return sliced
+    .replace(/\s+(?:Actuando\s+conjuntamente|Con\s+l[ií]mite\s+de|No\s+podr[aá]|Queda\s+excluido|Asimismo)\b[\s\S]*$/i, '')
     .replace(/^[\-–—:\)\(\[\]"“”']+/, '')
     .replace(/^(?:y|e)\s+/i, '')
     .replace(/\s+(?:y|e)$/i, '')

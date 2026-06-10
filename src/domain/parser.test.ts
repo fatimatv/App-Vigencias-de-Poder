@@ -135,11 +135,11 @@ describe('parseCertificateText', () => {
     expect(parsed.apoderados).toHaveLength(1);
     expect(parsed.apoderados[0].nombreApoderado).toBe('FATIMA LUCIA TOCHE VEGA');
     expect(parsed.apoderados[0].dniApoderado).toBe('40945848');
-    expect(parsed.apoderados[0].facultades).toEqual(
-      expect.arrayContaining([
-        'REPRESENTAR A LA SOCIEDAD ANTE TODO TIPO DE AUTORIDADES ADMINISTRATIVAS'
-      ])
-    );
+    expect(
+      parsed.apoderados[0].facultades.some((item) =>
+        item.startsWith('REPRESENTAR A LA SOCIEDAD ANTE TODO TIPO DE AUTORIDADES ADMINISTRATIVAS')
+      )
+    ).toBe(true);
     expect(parsed.requiereRevisionManual).toBe(false);
   });
 });

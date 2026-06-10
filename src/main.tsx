@@ -824,6 +824,12 @@ function UploadView({
         <Upload size={28} />
         <span className="font-semibold">Seleccionar certificado PDF SUNARP</span>
         <span className="text-sm text-slate-600">{progress}</span>
+        {progress.toLowerCase().includes('ocr') && (
+          <span className="max-w-xl text-xs leading-relaxed text-ialaw-gray">
+            El OCR se ejecuta localmente en tu navegador y puede tardar algunos minutos en certificados escaneados.
+            El contador de páginas muestra el avance de la carga.
+          </span>
+        )}
         <input className="sr-only" type="file" accept="application/pdf" onChange={(event) => event.target.files?.[0] && void handleFile(event.target.files[0])} />
       </label>
 
