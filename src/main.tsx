@@ -12,6 +12,7 @@ import {
   LogOut,
   Pencil,
   Plus,
+  RefreshCcw,
   Save,
   Search,
   ShieldCheck,
@@ -461,6 +462,14 @@ function EmpresaView({
     await onRefresh();
   }
 
+  async function reprocessVigencia(vigenciaId: string) {
+    const confirmed = window.confirm('Se volverá a extraer la información desde el PDF guardado y se actualizarán los apoderados detectados. ¿Deseas continuar?');
+    if (!confirmed) return;
+
+    await reprocessStoredVigencia(vigenciaId);
+    await onRefresh();
+  }
+
   async function deleteVigencia(vigenciaId: string) {
     const confirmed = window.confirm('Esta acción eliminará la vigencia y los apoderados asociados. ¿Deseas continuar?');
     if (!confirmed) return;
@@ -533,6 +542,9 @@ function EmpresaView({
                     <div className="flex gap-2">
                       <button className="icon-button" onClick={() => openBlob(vigencia.archivoPDF)} title="Ver PDF">
                         <Eye size={16} />
+                      </button>
+                      <button className="icon-button" onClick={() => void reprocessVigencia(vigencia.id)} title="Reprocesar vigencia">
+                        <RefreshCcw size={16} />
                       </button>
                       <button className="icon-button text-red-700 hover:bg-red-50" onClick={() => void deleteVigencia(vigencia.id)} title="Eliminar vigencia">
                         <Trash2 size={16} />
@@ -1137,77 +1149,87 @@ async function repairLegacyImportedData() {
 
     if (!needsRepair || hasManualEdits) continue;
 
-    let sourceText = vigencia.textoExtraido?.trim() ?? '';
-    if (!sourceText && vigencia.archivoPDF) {
-      sourceText = (await extractPdfText(vigencia.archivoPDF as File)).trim();
+    await reprocessStoredVigencia(vigencia.id);
+  }
+}
+
+async function reprocessStoredVigencia(vigenciaId: string) {
+  const vigencia = await db.vigencias.get(vigenciaId);
+  if (!vigencia) return;
+
+  const linkedApoderados = await db.apoderados.where('vigenciaId').equals(vigenciaId).toArray();
+  let sourceText = vigencia.textoExtraido?.trim() ?? '';
+
+  if (!sourceText && vigencia.archivoPDF) {
+    sourceText = (await extractPdfText(vigencia.archivoPDF as File)).trim();
+  }
+
+  if (!sourceText) return;
+
+  const reparsed = parseCertificateText(sourceText);
+  if (!reparsed.apoderados.length) return;
+
+  await db.transaction('rw', db.vigencias, db.apoderados, async () => {
+    const repairedDate = vigencia.fechaExpedicion ?? reparsed.fechaExpedicion;
+    await db.vigencias.update(vigencia.id, {
+      textoExtraido: sourceText,
+      fechaExpedicion: repairedDate,
+      numeroPublicidad: vigencia.numeroPublicidad ?? reparsed.numeroPublicidad,
+      estadoAlerta: calculateAlertState(repairedDate)
+    });
+
+    const reusable = linkedApoderados.filter((item) => (item.editadoPorUsuario?.length ?? 0) === 0);
+    if (reusable.length > 0 && reusable.length === reparsed.apoderados.length) {
+      const matched = new Set<string>();
+
+      for (const parsedApoderado of reparsed.apoderados) {
+        const match =
+          reusable.find(
+            (item) => !matched.has(item.id) && normalizeEntityName(item.nombreApoderado) === normalizeEntityName(parsedApoderado.nombreApoderado)
+          ) ?? reusable.find((item) => !matched.has(item.id));
+
+        if (!match) continue;
+        matched.add(match.id);
+
+        await db.apoderados.put({
+          ...match,
+          nombreApoderado: match.nombreApoderado || parsedApoderado.nombreApoderado,
+          dniApoderado: match.dniApoderado || parsedApoderado.dniApoderado,
+          tipoPoder: parsedApoderado.tipoPoder,
+          tipoRepresentacion: parsedApoderado.tipoRepresentacion,
+          coApoderado: parsedApoderado.coApoderado,
+          facultades: parsedApoderado.facultades,
+          limitaciones: parsedApoderado.limitaciones,
+          actosSinFacultad: parsedApoderado.actosSinFacultad,
+          confianza: parsedApoderado.confianza
+        });
+      }
+
+      return;
     }
 
-    if (!sourceText) continue;
+    if (linkedApoderados.length > 0) {
+      await db.apoderados.bulkDelete(linkedApoderados.map((item) => item.id));
+    }
 
-    const reparsed = parseCertificateText(sourceText);
-    if (!reparsed.apoderados.length) continue;
-
-    await db.transaction('rw', db.vigencias, db.apoderados, async () => {
-      const repairedDate = vigencia.fechaExpedicion ?? reparsed.fechaExpedicion;
-      await db.vigencias.update(vigencia.id, {
-        textoExtraido: sourceText,
-        fechaExpedicion: repairedDate,
-        numeroPublicidad: vigencia.numeroPublicidad ?? reparsed.numeroPublicidad,
-        estadoAlerta: calculateAlertState(repairedDate)
-      });
-
-      if (linkedApoderados.length > 0 && linkedApoderados.length === reparsed.apoderados.length) {
-        const matched = new Set<string>();
-
-        for (const parsedApoderado of reparsed.apoderados) {
-          const match =
-            linkedApoderados.find(
-              (item) => !matched.has(item.id) && normalizeEntityName(item.nombreApoderado) === normalizeEntityName(parsedApoderado.nombreApoderado)
-            ) ?? linkedApoderados.find((item) => !matched.has(item.id));
-
-          if (!match) continue;
-          matched.add(match.id);
-
-          await db.apoderados.put({
-            ...match,
-            nombreApoderado: match.nombreApoderado || parsedApoderado.nombreApoderado,
-            dniApoderado: match.dniApoderado || parsedApoderado.dniApoderado,
-            tipoPoder: parsedApoderado.tipoPoder,
-            tipoRepresentacion: parsedApoderado.tipoRepresentacion,
-            coApoderado: parsedApoderado.coApoderado,
-            facultades: parsedApoderado.facultades,
-            limitaciones: parsedApoderado.limitaciones,
-            actosSinFacultad: parsedApoderado.actosSinFacultad,
-            confianza: parsedApoderado.confianza
-          });
-        }
-
-        return;
-      }
-
-      if (linkedApoderados.length > 0) {
-        await db.apoderados.bulkDelete(linkedApoderados.map((item) => item.id));
-      }
-
-      await db.apoderados.bulkAdd(
-        reparsed.apoderados.map((item) => ({
-          id: crypto.randomUUID(),
-          vigenciaId: vigencia.id,
-          empresaId: vigencia.empresaId,
-          nombreApoderado: item.nombreApoderado,
-          dniApoderado: item.dniApoderado,
-          tipoPoder: item.tipoPoder,
-          tipoRepresentacion: item.tipoRepresentacion,
-          coApoderado: item.coApoderado,
-          facultades: item.facultades,
-          limitaciones: item.limitaciones,
-          actosSinFacultad: item.actosSinFacultad,
-          observaciones: '',
-          confianza: item.confianza
-        }))
-      );
-    });
-  }
+    await db.apoderados.bulkAdd(
+      reparsed.apoderados.map((item) => ({
+        id: crypto.randomUUID(),
+        vigenciaId: vigencia.id,
+        empresaId: vigencia.empresaId,
+        nombreApoderado: item.nombreApoderado,
+        dniApoderado: item.dniApoderado,
+        tipoPoder: item.tipoPoder,
+        tipoRepresentacion: item.tipoRepresentacion,
+        coApoderado: item.coApoderado,
+        facultades: item.facultades,
+        limitaciones: item.limitaciones,
+        actosSinFacultad: item.actosSinFacultad,
+        observaciones: '',
+        confianza: item.confianza
+      }))
+    );
+  });
 }
 
 function normalizeEntityName(value?: string): string {
