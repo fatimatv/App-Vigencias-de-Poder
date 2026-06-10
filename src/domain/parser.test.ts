@@ -25,7 +25,10 @@ describe('parseCertificateText', () => {
     expect(parsed.apoderados[0].tipoRepresentacion).toBe('mancomunada');
     expect(parsed.apoderados[0].coApoderado).toBe('MARIA LOPEZ GARCIA');
     expect(parsed.apoderados[0].facultades).toEqual(
-      expect.arrayContaining(['firmar contratos', 'representar judicialmente', 'abrir y cerrar cuentas'])
+      expect.arrayContaining([
+        'firmar contratos',
+        'representar judicialmente y abrir y cerrar cuentas'
+      ])
     );
     expect(parsed.apoderados[0].limitaciones).toEqual(
       expect.arrayContaining(['Con límite de USD 50,000 y previa aprobación del directorio'])
@@ -77,7 +80,28 @@ describe('parseCertificateText', () => {
     expect(parsed.apoderados[0].nombreApoderado).toBe('JOSE LUIS PEREZ GOMEZ');
     expect(parsed.apoderados[0].dniApoderado).toBe('11223344');
     expect(parsed.apoderados[0].facultades).toEqual(
-      expect.arrayContaining(['representar judicialmente', 'abrir y cerrar cuentas'])
+      expect.arrayContaining(['representar judicialmente y abrir y cerrar cuentas'])
+    );
+  });
+
+  it('extracts facultades as complete clauses instead of isolated verbs', () => {
+    const text = `
+      Certificado de vigencia de poder emitido con fecha 9 de junio de 2026.
+      Partida registral 99887766 inscrita en la Oficina Registral de Lima.
+      Se nombra como apoderada a ANA MARIA VEGA TORRES con DNI N° 12345678.
+      Facultades: REPRESENTAR Y SOMETER A LA SOCIEDAD EN CASO DE CONTROVERSIAS LABORALES A ARBITRAJE,
+      INTERPONER Y CONTESTAR TODA CLASE DE DEMANDAS, SUSCRIBIR CONTRATOS DE PRESTACION DE SERVICIOS.
+    `;
+
+    const parsed = parseCertificateText(text);
+
+    expect(parsed.apoderados).toHaveLength(1);
+    expect(parsed.apoderados[0].facultades).toEqual(
+      expect.arrayContaining([
+        'REPRESENTAR Y SOMETER A LA SOCIEDAD EN CASO DE CONTROVERSIAS LABORALES A ARBITRAJE',
+        'INTERPONER Y CONTESTAR TODA CLASE DE DEMANDAS',
+        'SUSCRIBIR CONTRATOS DE PRESTACION DE SERVICIOS'
+      ])
     );
   });
 
@@ -99,6 +123,8 @@ describe('parseCertificateText', () => {
       NOMBRAR COMO NUEVO GERENTE GENERAL DE LA SOCIEDAD A LA SRTA. FATIMA LUCIA TOCHE VEGA,
       IDENTIFICADA CON D.N.I. N°40945848, QUIEN A PARTIR DEL 22 DE JULIO DE 2018 GOZARÁ DE
       TODAS LAS FACULTADES CORRESPONDIENTES AL GERENTE GENERAL.
+      LAS ATRIBUCIONES DEL GERENTE GENERAL DE LA SOCIEDAD SERÁN LAS SIGUIENTES, LAS CUALES LAS EJERCERÁ DE MANERA INDIVIDUAL Y A SOLA FIRMA:
+      1. REPRESENTAR A LA SOCIEDAD ANTE TODO TIPO DE AUTORIDADES ADMINISTRATIVAS, JUDICIALES, LABORALES MUNICIPALES.
     `;
 
     const parsed = parseCertificateText(text);
@@ -109,6 +135,11 @@ describe('parseCertificateText', () => {
     expect(parsed.apoderados).toHaveLength(1);
     expect(parsed.apoderados[0].nombreApoderado).toBe('FATIMA LUCIA TOCHE VEGA');
     expect(parsed.apoderados[0].dniApoderado).toBe('40945848');
+    expect(parsed.apoderados[0].facultades).toEqual(
+      expect.arrayContaining([
+        'REPRESENTAR A LA SOCIEDAD ANTE TODO TIPO DE AUTORIDADES ADMINISTRATIVAS'
+      ])
+    );
     expect(parsed.requiereRevisionManual).toBe(false);
   });
 });

@@ -16,26 +16,50 @@ const MONTHS: Record<string, string> = {
   diciembre: '12'
 };
 
-const FACULTY_PHRASES = [
-  'firmar contratos',
+const FACULTY_VERBS = [
+  'abrir',
+  'aceptar',
+  'afianzar',
+  'arrendar',
   'celebrar',
-  'suscribir',
-  'representar',
-  'otorgar',
+  'cerrar',
   'cobrar',
-  'cobrar y endosar cheques',
-  'abrir y cerrar cuentas',
   'comprar',
-  'vender',
-  'enajenar',
-  'hipotecar',
-  'transigir',
-  'comprometer en arbitraje',
-  'interponer recursos',
-  'representar judicialmente',
+  'comprometer',
+  'constituir',
   'delegar',
-  'sustituir poderes'
+  'disponer',
+  'ejecutar',
+  'enajenar',
+  'endosar',
+  'firmar',
+  'gestionar',
+  'girar',
+  'hipotecar',
+  'interponer',
+  'negociar',
+  'otorgar',
+  'pactar',
+  'presentar',
+  'representar',
+  'resolver',
+  'solicitar',
+  'someter',
+  'suscribir',
+  'sustituir',
+  'transigir',
+  'tramitar',
+  'vender'
 ];
+
+const FACULTY_SECTION_MARKERS = [
+  /facultades\s*:/i,
+  /las\s+atribuciones\s+del\s+gerente\s+general[^.]{0,220}?ser[aá]n\s+las\s+siguientes\s*:/i,
+  /facultades\s+correspondientes\s+al\s+gerente\s+general/i
+];
+
+const FACULTY_SECTION_END =
+  /(?:limitaciones?\s*:|actos\s+sin\s+facultad|observaciones?\s*:|no\s+podr[aá]|queda\s+excluido|revocaci[oó]n|vigencia\s+del\s+poder|asimismo[,;:]?\s+en\s+el\s+asiento|denominaci[oó]n\s+o\s+raz[oó]n\s+social\s*:)/i;
 
 const DATE_PREFIXES =
   '(?:expedido\\s+el|expedido\\s+con\\s+fecha|fecha\\s+de\\s+expedici[oó]n|emitido\\s+el|emitido\\s+con\\s+fecha|con\\s+fecha|de\\s+fecha|fecha)';
@@ -201,8 +225,16 @@ function inferPowerType(text: string): string {
 }
 
 function extractFacultades(text: string): string[] {
-  const lower = text.toLowerCase();
-  return FACULTY_PHRASES.filter((phrase) => lower.includes(phrase));
+  const sections = extractFacultadSections(text);
+  const clauses = sections.flatMap((section) => splitFacultyClauses(section));
+  const seen = new Set<string>();
+
+  return clauses.filter((clause) => {
+    const key = clause.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function extractLimitaciones(text: string): string[] {
@@ -219,4 +251,52 @@ function extractNegativeActs(text: string): string[] {
 
 function capitalizeFirst(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function extractFacultadSections(text: string): string[] {
+  const sections: string[] = [];
+
+  for (const marker of FACULTY_SECTION_MARKERS) {
+    const match = marker.exec(text);
+    if (!match) continue;
+
+    const start = match.index + match[0].length;
+    const rest = text.slice(start);
+    const endMatch = FACULTY_SECTION_END.exec(rest);
+    sections.push((endMatch ? rest.slice(0, endMatch.index) : rest).trim());
+  }
+
+  if (sections.length > 0) return sections;
+  return [text];
+}
+
+function splitFacultyClauses(section: string): string[] {
+  return section
+    .split(/(?:\s+[A-Z]\)\s+|\s+\d+[.)]\s+|\s*;\s*|\s*,\s*|\.(?=\s+[A-ZÁÉÍÓÚÑ0-9]))/)
+    .map(cleanFacultyClause)
+    .filter(isFacultyClause);
+}
+
+function cleanFacultyClause(value: string): string {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  const verbPattern = new RegExp(`\\b(?:${FACULTY_VERBS.join('|')})\\b`, 'i');
+  const verbIndex = compact.search(verbPattern);
+  const sliced = verbIndex >= 0 ? compact.slice(verbIndex) : compact;
+
+  return sliced
+    .replace(/^[\-–—:\)\(\[\]"“”']+/, '')
+    .replace(/^(?:y|e)\s+/i, '')
+    .replace(/\s+(?:y|e)$/i, '')
+    .replace(/[.;:,]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isFacultyClause(value: string): boolean {
+  if (!value) return false;
+  if (value.length < 12) return false;
+  const lower = value.toLowerCase();
+  if (!FACULTY_VERBS.some((verb) => lower.startsWith(verb))) return false;
+  if (!/\s/.test(value)) return false;
+  return !/^(?:facultades|se\s+acord[oó]|art[ií]culo|las\s+atribuciones)/i.test(lower);
 }
