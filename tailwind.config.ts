@@ -29,9 +29,9 @@ export default {
         }
       },
       fontFamily: {
-        sans: ['"Cocogoose Light"', '"Century Gothic"', 'Aptos', 'Segoe UI', 'Arial', 'sans-serif'],
-        title: ['"Cocogoose Demibold"', '"Arial Black"', '"Century Gothic"', 'Arial', 'sans-serif'],
-        subtitle: ['"Bebas Neue"', '"Arial Narrow"', 'Impact', 'sans-serif']
+        sans: ['"Century Gothic"', 'Aptos', '"Trebuchet MS"', 'Segoe UI', 'Arial', 'sans-serif'],
+        title: ['"Century Gothic"', 'Aptos', '"Trebuchet MS"', '"Arial Black"', 'Arial', 'sans-serif'],
+        subtitle: ['"Bahnschrift SemiCondensed"', '"Arial Narrow"', 'Impact', 'sans-serif']
       }
     }
   },

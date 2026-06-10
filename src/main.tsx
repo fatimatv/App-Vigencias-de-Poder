@@ -153,6 +153,10 @@ function App() {
   );
 }
 
+function formatPartidaRegistral(value?: string): string {
+  return value?.trim() || 'Sin partida registral';
+}
+
 function BrandMark() {
   return (
     <span className="brand-mark" aria-hidden="true">
@@ -213,7 +217,7 @@ function Dashboard({
             <span className="min-w-0 flex-1 text-left">
               <span className="block truncate font-semibold">{row.empresa.nombreEmpresa}</span>
               <span className="block text-sm text-slate-600">
-                RUC {row.empresa.ruc} · Partida {row.empresa.partidaRegistral} · {row.empresa.oficinaRegistral}
+                RUC {row.empresa.ruc} · {formatPartidaRegistral(row.empresa.partidaRegistral)} · {row.empresa.oficinaRegistral}
               </span>
             </span>
             <span className={`pill ${statusClass(row.estado)}`}>{statusLabel(row.estado)}</span>
@@ -595,7 +599,7 @@ function UploadView({
               />
               <EditableField
                 label="Partida detectada"
-                value={parsed.partidaRegistral ?? empresa.partidaRegistral}
+                value={parsed.partidaRegistral ?? empresa.partidaRegistral ?? ''}
                 confidence={parsed.confianza.partidaRegistral}
                 onChange={() => undefined}
               />
@@ -662,7 +666,15 @@ function EmpresaModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
 
   async function save() {
     if (!form.nombreEmpresa.trim() || !/^\d{11}$/.test(form.ruc)) return;
-    await db.empresas.add({ id: crypto.randomUUID(), ...form, fechaCreacion: Date.now() });
+    await db.empresas.add({
+      id: crypto.randomUUID(),
+      nombreEmpresa: form.nombreEmpresa.trim(),
+      ruc: form.ruc,
+      oficinaRegistral: form.oficinaRegistral.trim() || 'Lima',
+      ...(form.partidaRegistral.trim() ? { partidaRegistral: form.partidaRegistral.trim() } : {}),
+      ...(form.notas.trim() ? { notas: form.notas.trim() } : {}),
+      fechaCreacion: Date.now()
+    });
     await onSaved();
   }
 
@@ -678,7 +690,7 @@ function EmpresaModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
         <div className="grid gap-3">
           <input className="input" placeholder="Nombre de empresa" value={form.nombreEmpresa} onChange={(event) => setForm({ ...form, nombreEmpresa: event.target.value })} />
           <input className="input" placeholder="RUC de 11 dígitos" value={form.ruc} onChange={(event) => setForm({ ...form, ruc: event.target.value.replace(/\D/g, '').slice(0, 11) })} />
-          <input className="input" placeholder="Partida registral" value={form.partidaRegistral} onChange={(event) => setForm({ ...form, partidaRegistral: event.target.value })} />
+          <input className="input" placeholder="Partida registral (opcional)" value={form.partidaRegistral} onChange={(event) => setForm({ ...form, partidaRegistral: event.target.value })} />
           <input className="input" placeholder="Oficina registral" value={form.oficinaRegistral} onChange={(event) => setForm({ ...form, oficinaRegistral: event.target.value })} />
           <textarea className="input min-h-24" placeholder="Notas" value={form.notas} onChange={(event) => setForm({ ...form, notas: event.target.value })} />
         </div>
@@ -788,11 +800,11 @@ function Toolbar({ title, onBack, children }: { title: string; onBack: () => voi
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function Info({ label, value }: { label: string; value?: string }) {
   return (
     <div className="info-block">
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong>{value?.trim() || 'Sin registrar'}</strong>
     </div>
   );
 }

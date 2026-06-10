@@ -6,7 +6,7 @@ export interface Empresa {
   id: string;
   nombreEmpresa: string;
   ruc: string;
-  partidaRegistral: string;
+  partidaRegistral?: string;
   oficinaRegistral: string;
   notas?: string;
   fechaCreacion: number;
