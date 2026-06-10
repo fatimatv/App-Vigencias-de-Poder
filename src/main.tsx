@@ -1127,8 +1127,6 @@ async function repairLegacyImportedData() {
   const [vigencias, apoderados] = await Promise.all([db.vigencias.toArray(), db.apoderados.toArray()]);
 
   for (const vigencia of vigencias) {
-    if (!vigencia.textoExtraido?.trim()) continue;
-
     const linkedApoderados = apoderados.filter((item) => item.vigenciaId === vigencia.id);
     const hasManualEdits = linkedApoderados.some((item) => (item.editadoPorUsuario?.length ?? 0) > 0);
     const needsRepair =
@@ -1139,12 +1137,20 @@ async function repairLegacyImportedData() {
 
     if (!needsRepair || hasManualEdits) continue;
 
-    const reparsed = parseCertificateText(vigencia.textoExtraido);
+    let sourceText = vigencia.textoExtraido?.trim() ?? '';
+    if (!sourceText && vigencia.archivoPDF) {
+      sourceText = (await extractPdfText(vigencia.archivoPDF as File)).trim();
+    }
+
+    if (!sourceText) continue;
+
+    const reparsed = parseCertificateText(sourceText);
     if (!reparsed.apoderados.length) continue;
 
     await db.transaction('rw', db.vigencias, db.apoderados, async () => {
       const repairedDate = vigencia.fechaExpedicion ?? reparsed.fechaExpedicion;
       await db.vigencias.update(vigencia.id, {
+        textoExtraido: sourceText,
         fechaExpedicion: repairedDate,
         numeroPublicidad: vigencia.numeroPublicidad ?? reparsed.numeroPublicidad,
         estadoAlerta: calculateAlertState(repairedDate)
