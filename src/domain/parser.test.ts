@@ -168,4 +168,28 @@ describe('parseCertificateText', () => {
     );
     expect(parsed.apoderados[0].facultades.join(' ')).not.toMatch(/LOS CERTIFICADOS QUE EXTIENDEN|ART[IÍ]CULO 81|Pag\./i);
   });
+
+  it('does not include the repeated SUNARP page header in apoderado faculties', () => {
+    const text = `
+      Certificado de vigencia emitido con fecha 05/05/2026.
+      Que, en la partida electrónica N° 25427799 del Registro de Personas Jurídicas de la Oficina Registral de LIMA,
+      consta registrado y vigente el nombramiento a favor de RAMOS LOPEZ, CARLA MARIA, identificado con DNI. N° 70112233.
+      LAS ATRIBUCIONES DEL GERENTE GENERAL DE LA SOCIEDAD SERÁN LAS SIGUIENTES:
+      1. REPRESENTAR A LA SOCIEDAD ANTE ENTIDADES PUBLICAS Y PRIVADAS.
+      sunarp Superintendencia Nacional de los Registros Publicos ZONA REGISTRAL N° IX Oficina Registral de LIMA
+      Código de Verificación: 25427799 Publicidad N° 2026 - 2995711 05/05/2026 11:15:30
+      2. SUSCRIBIR CONTRATOS Y PRESENTAR SOLICITUDES ADMINISTRATIVAS.
+    `;
+
+    const parsed = parseCertificateText(text);
+
+    expect(parsed.partidaRegistral).toBe('25427799');
+    expect(parsed.apoderados[0].facultades).toEqual(
+      expect.arrayContaining([
+        'REPRESENTAR A LA SOCIEDAD ANTE ENTIDADES PUBLICAS Y PRIVADAS',
+        'SUSCRIBIR CONTRATOS Y PRESENTAR SOLICITUDES ADMINISTRATIVAS'
+      ])
+    );
+    expect(parsed.apoderados[0].facultades.join(' ')).not.toMatch(/sunarp|ZONA REGISTRAL|C[oó]digo de Verificaci[oó]n|Publicidad N/i);
+  });
 });

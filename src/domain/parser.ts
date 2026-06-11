@@ -228,7 +228,7 @@ function inferPowerType(text: string): string {
 }
 
 function extractFacultades(text: string): string[] {
-  const sections = extractFacultadSections(stripSunarpFooterDisclaimer(text));
+  const sections = extractFacultadSections(stripSunarpRepeatedBoilerplate(text));
   const clauses = sections.flatMap((section) => splitFacultyClauses(section));
   const seen = new Set<string>();
 
@@ -240,8 +240,16 @@ function extractFacultades(text: string): string[] {
   });
 }
 
-function stripSunarpFooterDisclaimer(text: string): string {
+function stripSunarpRepeatedBoilerplate(text: string): string {
   return text
+    .replace(
+      /sunarp\s+Superintendencia\s+Nacional\s+de\s+los\s+Registros\s+P[uú]blicos\s+ZONA\s+REGISTRAL\s+N\.?[°*]?\s*[IVXLCDM]+\s+Oficina\s+Registral\s+de\s+[A-ZÁÉÍÓÚÑ\s]+?\s+C[oó]digo\s+de\s+Verificaci[oó]n\s*:\s*\d+\s+Publicidad\s+N\.?[°*]?\s*\d{4}\s*-\s*\d+\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}:\d{2}/gi,
+      ' '
+    )
+    .replace(
+      /ZONA\s+REGISTRAL\s+N\.?[°*]?\s*[IVXLCDM]+\s+Oficina\s+Registral\s+de\s+[A-ZÁÉÍÓÚÑ\s]+?\s+C[oó]digo\s+de\s+Verificaci[oó]n\s*:\s*\d+\s+Publicidad\s+N\.?[°*]?\s*\d{4}\s*-\s*\d+\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}:\d{2}/gi,
+      ' '
+    )
     .replace(
       /LOS\s+CERTIFICADOS\s+QUE\s+EXTIENDEN\s+LAS\s+OFICINAS\s+REGISTRALES[\s\S]*?Pag\.?\s*\d+\s+de\s+\d+/gi,
       ' '
