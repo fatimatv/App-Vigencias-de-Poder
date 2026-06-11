@@ -75,7 +75,7 @@ export function parseCertificateText(text: string): ParsedCertificate {
   const fecha = extractIssueDate(normalized);
   const partida = extractMatch(
     normalized,
-    /(?:partida\s*(?:n\.?°?|electr[oó]nica|registral)?|partida\s+electr[oó]nica|partida\s+registral)\s*(?:n\.?°?)?\s*[:\-]?\s*(\d{6,12}(?:-\d+)?)/i
+    /(?:partida\s*(?:n\.?[°*]?|electr[oó]nica|registral)?|partida\s+electr[oó]nica|partida\s+registral)\s*(?:n\.?[°*]?)?\s*[:\-]?\s*(\d{6,12}(?:-\d+)?)/i
   );
   const oficina = extractMatch(normalized, /oficina\s+registral\s+(?:de\s+)?([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ\s]+?)(?:\.|,|;|\s+N[uú]mero|\s+Se\s)/i);
   const numeroPublicidad = normalizePublicationNumber(
@@ -228,7 +228,7 @@ function inferPowerType(text: string): string {
 }
 
 function extractFacultades(text: string): string[] {
-  const sections = extractFacultadSections(text);
+  const sections = extractFacultadSections(stripSunarpFooterDisclaimer(text));
   const clauses = sections.flatMap((section) => splitFacultyClauses(section));
   const seen = new Set<string>();
 
@@ -238,6 +238,18 @@ function extractFacultades(text: string): string[] {
     seen.add(key);
     return true;
   });
+}
+
+function stripSunarpFooterDisclaimer(text: string): string {
+  return text
+    .replace(
+      /LOS\s+CERTIFICADOS\s+QUE\s+EXTIENDEN\s+LAS\s+OFICINAS\s+REGISTRALES[\s\S]*?Pag\.?\s*\d+\s+de\s+\d+/gi,
+      ' '
+    )
+    .replace(
+      /LA\s+AUTENTICIDAD\s+DEL\s+PRESENTE\s+DOCUMENTO\s+PODR[AÁ]\s+VERIFICARSE[\s\S]*?REGLAMENTO\s+DEL\s+SERVICIO\s+DE\s+PUBLICIDAD\s+REGISTRAL[\s\S]*?(?:SISTEMA\s+INFORM[AÁ]TICO|Pag\.?\s*\d+\s+de\s+\d+)/gi,
+      ' '
+    );
 }
 
 function extractLimitaciones(text: string): string[] {

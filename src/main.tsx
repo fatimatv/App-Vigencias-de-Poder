@@ -360,13 +360,8 @@ function formatPartidaRegistral(value?: string): string {
 
 function BrandMark() {
   return (
-    <span className="brand-mark" aria-hidden="true">
-      <span className="brand-mark-grid">
-        <span />
-        <span />
-        <span />
-        <span />
-      </span>
+    <span className="brand-mark">
+      <img className="brand-logo" src="/brand/ialaw-logo.png" alt="IALAW Digital Lawyers" />
     </span>
   );
 }
@@ -793,7 +788,17 @@ function UploadView({
       requiereRevisionManual: parsed.requiereRevisionManual
     };
 
-    await db.transaction('rw', db.vigencias, db.apoderados, async () => {
+    await db.transaction('rw', db.empresas, db.vigencias, db.apoderados, async () => {
+      const empresaPatch: Partial<Empresa> = {};
+      if (parsed.partidaRegistral?.trim()) {
+        empresaPatch.partidaRegistral = parsed.partidaRegistral.trim();
+      }
+      if (parsed.oficinaRegistral?.trim()) {
+        empresaPatch.oficinaRegistral = parsed.oficinaRegistral.trim();
+      }
+      if (Object.keys(empresaPatch).length > 0) {
+        await db.empresas.update(empresaId, empresaPatch);
+      }
       await db.vigencias.add(vigencia);
       await db.apoderados.bulkAdd(
         parsed.apoderados.map((item) => ({
@@ -857,7 +862,7 @@ function UploadView({
                 label="Partida detectada"
                 value={parsed.partidaRegistral ?? empresa.partidaRegistral ?? ''}
                 confidence={parsed.confianza.partidaRegistral}
-                onChange={() => undefined}
+                onChange={(value) => setParsed({ ...parsed, partidaRegistral: value || undefined })}
               />
             </div>
           </section>
@@ -1175,7 +1180,18 @@ async function reprocessStoredVigencia(vigenciaId: string) {
   const reparsed = parseCertificateText(sourceText);
   if (!reparsed.apoderados.length) return;
 
-  await db.transaction('rw', db.vigencias, db.apoderados, async () => {
+  await db.transaction('rw', db.empresas, db.vigencias, db.apoderados, async () => {
+    const empresaPatch: Partial<Empresa> = {};
+    if (reparsed.partidaRegistral?.trim()) {
+      empresaPatch.partidaRegistral = reparsed.partidaRegistral.trim();
+    }
+    if (reparsed.oficinaRegistral?.trim()) {
+      empresaPatch.oficinaRegistral = reparsed.oficinaRegistral.trim();
+    }
+    if (Object.keys(empresaPatch).length > 0) {
+      await db.empresas.update(vigencia.empresaId, empresaPatch);
+    }
+
     const repairedDate = vigencia.fechaExpedicion ?? reparsed.fechaExpedicion;
     await db.vigencias.update(vigencia.id, {
       textoExtraido: sourceText,

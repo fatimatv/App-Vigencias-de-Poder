@@ -58,19 +58,11 @@ th {
   }
 
   .brand-mark {
-    @apply grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white text-ialaw-blue shadow-sm;
+    @apply grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-ialaw-blue;
   }
 
-  .brand-mark-grid {
-    @apply grid h-7 w-7 grid-cols-2 gap-1;
-  }
-
-  .brand-mark-grid span {
-    @apply rounded bg-ialaw-blue;
-  }
-
-  .brand-mark-grid span:nth-child(2) {
-    @apply bg-ialaw-yellow;
+  .brand-logo {
+    @apply h-12 w-12 object-contain;
   }
 
   .shadow-brand {
